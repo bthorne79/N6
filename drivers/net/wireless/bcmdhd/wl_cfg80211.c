@@ -4146,6 +4146,7 @@ wl_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *dev,
 		if (cfg->scan_request) {
 			wl_notify_escan_complete(cfg, dev, true, true);
 		}
+		wl_clr_drv_status(cfg, CONNECTING, dev);
 		wl_set_drv_status(cfg, DISCONNECTING, dev);
 		if (wl_get_drv_status(cfg, CONNECTING, dev)) {
 			/* in case of associating status, this will abort assoc procedure */
