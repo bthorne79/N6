@@ -92,7 +92,6 @@ out:
 static const struct vm_operations_struct f2fs_file_vm_ops = {
 	.fault		= filemap_fault,
 	.page_mkwrite	= f2fs_vm_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
 };
 
 static int get_parent_ino(struct inode *inode, nid_t *pino)
@@ -241,6 +240,8 @@ go_write:
 		 * will be used only for fsynced inodes after checkpoint.
 		 */
 		try_to_fix_pino(inode);
+		clear_inode_flag(fi, FI_APPEND_WRITE);
+		clear_inode_flag(fi, FI_UPDATE_WRITE);
 		goto out;
 	}
 sync_nodes:
@@ -452,7 +453,7 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 			continue;
 
 		dn->data_blkaddr = NULL_ADDR;
-		update_extent_cache(dn);
+		f2fs_update_extent_cache(dn);
 		invalidate_blocks(sbi, blkaddr);
 		nr_free++;
 	}
