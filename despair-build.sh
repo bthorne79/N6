@@ -16,12 +16,12 @@ DEFCONFIG="despair_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Despair-5.1-"
-VER=".R16.75"
+VER=".R17"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
 export LOCALVERSION=~`echo $AK_VER`
-export CROSS_COMPILE=${HOME}/android/ubertc/bin/arm-eabi-
+export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-6.0/bin/arm-eabi-
 export ARCH=arm
 export SUBARCH=arm
 export KBUILD_BUILD_USER=DespairFactor
