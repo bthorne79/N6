@@ -62,7 +62,7 @@ fi
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
 mv /system/etc/sysctl.conf /tmp/sysctl.conf
 chmod 777 /tmp/sysctl.conf
-
+echo "net.core.default_qdisc = fq_codel" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_rfc1337 = 1" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_window_scaling = 1" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_workaround_signed_windows = 1" >> /tmp/sysctl.conf
