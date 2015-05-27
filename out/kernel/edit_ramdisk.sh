@@ -73,6 +73,10 @@ echo "net.ipv4.tcp_mtu_probing = 1" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_frto = 2" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_frto_response = 2" >> /tmp/sysctl.conf
 echo "net.ipv4.tcp_slow_start_after_idle = 0" >> /tmp/sysctl.conf
+echo 'net.core.wmem_max=12582912' >> /tmp/sysctl.conf
+echo 'net.core.rmem_max=12582912' >> /tmp/sysctl.conf
+echo 'net.ipv4.tcp_rmem= 10240 87380 12582912' >> /tmp/sysctl.conf
+echo 'net.ipv4.tcp_wmem= 10240 87380 12582912' >> /tmp/sysctl.conf
 mv /tmp/sysctl.conf /system/etc/sysctl.conf
 rm /tmp/ramdisk/boot.img-ramdisk.gz
 rm /tmp/boot.img-ramdisk.gz
