@@ -45,13 +45,6 @@ if [ "$found" != 'run-parts /system/etc/init.d' ]; then
         echo "    group root" >> /tmp/ramdisk/init.rc
 fi
 
-#copy custom init.shamu.power.rc
-cp /tmp/init.shamu.power.rc /tmp/ramdisk/init.shamu.power.rc
-chmod 750 /tmp/ramdisk/init.shamu.power.rc
-
-#copy custom init.shamu.rc
-cp /tmp/fstab.shamu /tmp/ramdisk/fstab.shamu
-chmod 750 /tmp/ramdisk/fstab.shamu
 
 #remove governor overrides, use kernel default
 #sed -i '/\/sys\/devices\/system\/cpu\/cpufreq\/interactive\/hispeed_freq/d' /tmp/ramdisk/init.shamu.power.rc
