@@ -57,7 +57,9 @@ fi
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu1\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu2\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu3\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
-
+#copy custom fstab
+cp /tmp/fstab.shamu /tmp/ramdisk/fstab.shamu
+chmod 750 /tmp/ramdisk/fstab.shamu
 #some TCP stack tweaks:)
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
 mv /system/etc/sysctl.conf /tmp/sysctl.conf
