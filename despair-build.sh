@@ -15,8 +15,8 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-BASE_AK_VER="Despair.M.Shamu"
-VER=".R2.7"
+BASE_AK_VER="Despair"
+VER=".R19.9.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
@@ -33,12 +33,12 @@ REPACK_DIR="${HOME}/android/AK-OnePone-AnyKernel2"
 PATCH_DIR="${HOME}/android/AK-OnePone-AnyKernel2/patch"
 MODULES_DIR="${HOME}/android/AK-OnePone-AnyKernel2/modules"
 ZIP_MOVE="${HOME}/android/AK-releases"
-ZIMAGE_DIR="${HOME}/android/shamum/arch/arm/boot"
+ZIMAGE_DIR="${HOME}/android/despairn6/arch/arm/boot"
 
 # Functions
 function clean_all {
 		rm -rf $MODULES_DIR/*
-		cd ~/android/shamum/out/kernel
+		cd ~/android/despairn6/out/kernel
 		rm -rf $DTBIMAGE
 		git reset --hard > /dev/null 2>&1
 		git clean -f -d > /dev/null 2>&1
@@ -64,14 +64,14 @@ function make_dtb {
 }
 
 function make_boot {
-		cp -vr $ZIMAGE_DIR/zImage-dtb ~/android/shamum/out/kernel/zImage
+		cp -vr $ZIMAGE_DIR/zImage-dtb ~/android/despairn6/out/kernel/zImage
 		
 		. appendramdisk.sh
 }
 
 
 function make_zip {
-		cd ~/android/shamum/out
+		cd ~/android/despairn6/out
 		zip -r9 `echo $AK_VER`.zip *
 		mv  `echo $AK_VER`.zip $ZIP_MOVE
 		cd $KERNEL_DIR
