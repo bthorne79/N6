@@ -65,6 +65,19 @@ chmod 750 /tmp/ramdisk/fstab.shamu
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu2\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu3\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 
+#build.prop tweaks
+cp /system/build.prop /system/build.prop.bak
+mv /system/build.prop /tmp/build.prop
+echo "windowsmgr.max_events_per_sec=150
+ro.min_pointer_dur=8
+ro.max.fling_velocity=12000
+ro.min.fling_velocity=8000
+video.accelerate.hw=1
+debug.performance.tuning=1
+persist.service.lgospd.enable=0
+persist.service.pcsync.enable=0
+touch.pressure.scale=0.003" >> /tmp/build.prop
+mv /tmp/build.prop /system/build.prop
 #some TCP stack tweaks:)
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
 mv /system/etc/sysctl.conf /tmp/sysctl.conf
