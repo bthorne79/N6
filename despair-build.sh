@@ -16,7 +16,7 @@ DEFCONFIG="despair_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Despair"
-VER=".R19.E.Shamu"
+VER=".R19.F.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
