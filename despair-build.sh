@@ -16,12 +16,12 @@ DEFCONFIG="despair_defconfig"
 
 # Kernel Details
 BASE_AK_VER="Despair"
-VER=".R20.7.Shamu"
+VER=".R22.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
 export LOCALVERSION=~`echo $AK_VER`
-export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-4.9/bin/arm-eabi-
+export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.2/bin/arm-eabi-
 export ARCH=arm
 export SUBARCH=arm
 export KBUILD_BUILD_USER=DespairFactor
