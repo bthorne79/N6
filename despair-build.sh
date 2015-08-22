@@ -16,7 +16,7 @@ DEFCONFIG="despair_defconfig"
 
 # Kernel Details
 VER=".R26.9.Shamu"
-AK_VER="$BASE_AK_VER$VER"
+AK_VER="$BASE_AK_VER$VER$TC"
 
 # Vars
 export LOCALVERSION=~`echo $AK_VER`
@@ -37,6 +37,7 @@ ZIMAGE_DIR="${HOME}/android/despairn6/arch/arm/boot"
 function clean_all {
 		rm -rf $MODULES_DIR/*
 		cd ~/android/despairn6/out/kernel
+		cd ~/android/despairn6/outm/kernel
 		rm -rf $DTBIMAGE
 		git reset --hard > /dev/null 2>&1
 		git clean -f -d > /dev/null 2>&1
@@ -103,12 +104,14 @@ do
 case "$echoice" in
 	1 )
 		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.2/bin/arm-eabi-
+		TC="UBER"
 		echo
 		echo "Using UBERTC"
 		break
 		;;
 	2)
 		export CROSS_COMPILE=${HOME}/android/sm/out/arm-eabi-5.2/bin/arm-eabi-
+		TC="SM"
 		echo
 		echo "Using SM"
 		break
