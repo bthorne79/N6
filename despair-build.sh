@@ -117,7 +117,7 @@ case "$echoice" in
 		break
 		;;
 	3 )
-		export CROSS_COMPILE=${HOME}/android/linaro/bin/arm-cortex_a15-linux-gnueabihf-
+		export CROSS_COMPILE=${HOME}/android/linarobuild/out/linaro-arm-eabi-5.2/bin/arm-eabi-
 		TC="LINARO"
 		echo
 		echo "Using Linaro"
