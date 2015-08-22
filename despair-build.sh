@@ -110,7 +110,7 @@ case "$echoice" in
 		break
 		;;
 	2)
-		export CROSS_COMPILE=${HOME}/android/sm/out/arm-eabi-5.2/bin/arm-eabi-
+		export CROSS_COMPILE=/home/despairfactor/tmp/arm-linux-gnueabi-5.2/bin/arm-eabi-
 		TC="SM"
 		echo
 		echo "Using SM"
@@ -152,7 +152,7 @@ while read -p "Do you want to build Marshmallow(M) or Lollipop(L)? " dchoice
 do
 case "$dchoice" in
 	m|M )
-		BASE_AK_VER="Despair.M.BFS"
+		BASE_AK_VER="Despair.M.CFS"
 		make_kernel
 		make_dtb
 		make_modules
@@ -161,7 +161,7 @@ case "$dchoice" in
 		break
 		;;
 	l|L )
-		BASE_AK_VER="Despair.L.BFS"
+		BASE_AK_VER="Despair.L.CFS"
 		make_kernel
 		make_dtb
 		make_modules
