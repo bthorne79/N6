@@ -21,7 +21,6 @@ AK_VER="$BASE_AK_VER$VER"
 
 # Vars
 export LOCALVERSION=~`echo $AK_VER`
-export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.2/bin/arm-eabi-
 export ARCH=arm
 export SUBARCH=arm
 export KBUILD_BUILD_USER=DespairFactor
@@ -92,6 +91,31 @@ echo "-----------------"
 echo "Making Despair Kernel:"
 echo "-----------------"
 echo -e "${restore}"
+
+while read -p "Do you want to use UBERTC(1) or SaberMod(2)? " echoice
+do
+case "$echoice" in
+	1 )
+		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.2/bin/arm-eabi-
+		echo
+		echo "Using UBERTC"
+		break
+		;;
+	2)
+		export CROSS_COMPILE=${HOME}/android/sm/out/arm-eabi-5.2/bin/arm-eabi-
+		echo
+		echo "Using SM"
+		break
+		;;
+	* )
+		echo
+		echo "Invalid try again!"
+		echo
+		;;
+esac
+done
+
+echo
 
 while read -p "Do you want to clean stuffs (y/n)? " cchoice
 do
