@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R27.Shamu"
+VER=".R27.Shamu."
 AK_VER="$BASE_AK_VER$VER$TC"
 
 # Vars
@@ -152,7 +152,7 @@ while read -p "Do you want to build Marshmallow(M) or Lollipop(L)? " dchoice
 do
 case "$dchoice" in
 	m|M )
-		BASE_AK_VER="Despair.M.CFS"
+		BASE_AK_VER="Despair.M.BFS"
 		make_kernel
 		make_dtb
 		make_modules
@@ -161,7 +161,7 @@ case "$dchoice" in
 		break
 		;;
 	l|L )
-		BASE_AK_VER="Despair.L.CFS"
+		BASE_AK_VER="Despair.L.BFS"
 		make_kernel
 		make_dtb
 		make_modules
