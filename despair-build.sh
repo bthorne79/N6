@@ -15,8 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-BASE_AK_VER="Despair.M.Shamu"
-VER=".R6.9"
+VER=".R26.9.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
@@ -76,15 +75,22 @@ function make_zip {
 		cd $KERNEL_DIR
 }
 
+function make_boot_m {
+		cp -vr $ZIMAGE_DIR/zImage-dtb ~/android/despairn6/outm/kernel/zImage
+		
+		. appendramdisk.sh
+}
+
+
+function make_zip_m {
+		cd ~/android/despairn6/outm
+		zip -r9 `echo $AK_VER`.zip *
+		mv  `echo $AK_VER`.zip $ZIP_MOVE
+		cd $KERNEL_DIR
+}
 
 DATE_START=$(date +"%s")
 
-
-echo "---------------"
-echo "Kernel Version:"
-echo "---------------"
-
-echo -e "${red}"; echo -e "${blink_red}"; echo "$AK_VER"; echo -e "${restore}";
 
 echo -e "${green}"
 echo "-----------------"
@@ -139,18 +145,25 @@ done
 
 echo
 
-while read -p "Do you want to build kernel (y/n)? " dchoice
+while read -p "Do you want to build Marshmallow(M) or Lollipop(L)? " dchoice
 do
 case "$dchoice" in
-	y|Y)
+	m|M )
+		BASE_AK_VER="Despair.M.BFS"
+		make_kernel
+		make_dtb
+		make_modules
+		make_boot_m
+		make_zip_m
+		break
+		;;
+	l|L )
+		BASE_AK_VER="Despair.L.BFS"
 		make_kernel
 		make_dtb
 		make_modules
 		make_boot
 		make_zip
-		break
-		;;
-	n|N )
 		break
 		;;
 	* )
@@ -160,6 +173,7 @@ case "$dchoice" in
 		;;
 esac
 done
+
 
 echo -e "${green}"
 echo "-------------------"
