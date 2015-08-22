@@ -16,10 +16,7 @@ DEFCONFIG="despair_defconfig"
 
 # Kernel Details
 VER=".R27.Shamu."
-AK_VER="$BASE_AK_VER$VER$TC"
 
-# Vars
-export LOCALVERSION=~`echo $AK_VER`
 export ARCH=arm
 export SUBARCH=arm
 export KBUILD_BUILD_USER=DespairFactor
@@ -160,6 +157,8 @@ do
 case "$dchoice" in
 	m|M )
 		BASE_AK_VER="Despair.M.BFS"
+		AK_VER="$BASE_AK_VER$VER$TC"
+		export LOCALVERSION=~`echo $AK_VER`
 		make_kernel
 		make_dtb
 		make_modules
@@ -169,6 +168,8 @@ case "$dchoice" in
 		;;
 	l|L )
 		BASE_AK_VER="Despair.L.BFS"
+		AK_VER="$BASE_AK_VER$VER$TC"
+		export LOCALVERSION=~`echo $AK_VER`
 		make_kernel
 		make_dtb
 		make_modules
