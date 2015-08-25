@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R28.1.Shamu."
+VER=".R28.2.Shamu."
 
 export ARCH=arm
 export SUBARCH=arm
