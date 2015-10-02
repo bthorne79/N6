@@ -855,6 +855,7 @@ enum {
 	TCA_CAKE_ATM,
 	TCA_CAKE_FLOW_MODE,
 	TCA_CAKE_OVERHEAD,
+	TCA_CAKE_ACTIVE_FLOWS,
 	__TCA_CAKE_MAX
 };
 #define TCA_CAKE_MAX	(__TCA_CAKE_MAX - 1)
@@ -877,7 +878,8 @@ struct tc_cake_xstats {
 		__u32 peak_delay; /* delay to fat flows */
 		__u32 avge_delay;
 		__u32 base_delay; /* delay to sparse flows */
-		__u32 active_flows;  
+		__u16 sparse_flows;
+		__u16 bulk_flows;
 	} cls[8];
 };
 
