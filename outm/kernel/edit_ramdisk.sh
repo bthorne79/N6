@@ -60,7 +60,10 @@ chmod 750 /tmp/ramdisk/fstab.shamu
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu1\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu2\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu3\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
-
+#Gain write access on /system
+if  grep -qr ro.secure=1 /tmp/ramdisk/default.prop; then
+ sed -i "s/ro.secure=1/ro.secure=0/" /tmp/ramdisk/default.prop
+fi
 #copy my modfied sysctl.conf:)
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
 mv /tmp/sysctl.conf /system/etc/sysctl.conf
