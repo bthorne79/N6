@@ -64,6 +64,15 @@ chmod 750 /tmp/ramdisk/fstab.shamu
 if  grep -qr ro.secure=1 /tmp/ramdisk/default.prop; then
  sed -i "s/ro.secure=1/ro.secure=0/" /tmp/ramdisk/default.prop
 fi
+
+if  grep -qr verity_load_state /tmp/ramdisk/init.shamu.rc; then
+ sed -i "s/verity_load_state/#verity_load_state/" /tmp/ramdisk/init.shamu.rc
+fi
+if  grep -qr verity_update_state /tmp/ramdisk/init.shamu.rc; then
+ sed -i "s/verity_update_state/#verity_update_state/" /tmp/ramdisk/init.shamu.rc
+fi
+
+
 #copy my modfied sysctl.conf:)
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
 mv /tmp/sysctl.conf /system/etc/sysctl.conf
