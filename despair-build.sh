@@ -15,8 +15,8 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R39.Shamu."
-AK_VER="$BASE_AK_VER$VER$TC"
+VER=".R40.Shamu"
+AK_VER="$BASE_AK_VER$VER"
 
 # Vars
 export LOCALVERSION=~`echo $AK_VER`
