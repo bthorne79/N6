@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R41.1.Shamu"
+VER=".R41.4.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
@@ -103,7 +103,7 @@ while read -p "Do you want to use UBERTC(1) or SaberMod(2) or Linaro(3)? " echoi
 do
 case "$echoice" in
 	1 )
-		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.2/bin/arm-eabi-
+		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-5.3/bin/arm-eabi-
 		TC="UBER"
 		echo
 		echo "Using UBERTC"
