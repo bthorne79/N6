@@ -50,8 +50,8 @@
 #include <linux/reciprocal_div.h>
 #include <net/netlink.h>
 #include <linux/version.h>
-#include <uapi/linux/pkt_sched.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,2,0)
+#include <net/pkt_sched_cake.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 #include <net/flow_keys.h>
 #else
 #include <net/flow_dissector.h>
@@ -100,7 +100,7 @@
  * (low) is used for that tin in the current pass.
  *
  * This qdisc incorporates much of Eric Dumazet's fq_codel code, which
- * he kindly dual-licensed, which we customised for use as an
+ * he kindly granted us permission to use, which we customised for use as an
  * integrated subordinate.  See sch_fq_codel.c for details of
  * operation.
  */
@@ -108,24 +108,43 @@
 #define CAKE_SET_WAYS (8)
 #define CAKE_MAX_TINS (8)
 
+#ifndef CAKE_VERSION
+#define CAKE_VERSION "unknown"
+#endif
+static char *cake_version __attribute__((used)) = "Cake version: "
+		CAKE_VERSION;
+
 struct cake_flow {
+	/* this stuff is all needed per-flow at dequeue time */
 	struct sk_buff	  *head;
 	struct sk_buff	  *tail;
 	struct list_head  flowchain;
-	int		  deficit;
+	s32		  deficit;
 	u32		  dropped; /* Drops (or ECN marks) on this flow */
 	struct codel_vars cvars;
+	u16		  srchost; /* index into cake_host table */
+	u16		  dsthost;
 }; /* please try to keep this structure <= 64 bytes */
 
+struct cake_host {
+	u32 srchost_tag;
+	s16 srchost_deficit;
+	u16 srchost_refcnt;
+	u32 dsthost_tag;
+	s16 dsthost_deficit;
+	u16 dsthost_refcnt;
+};
+
 struct cake_tin_data {
-	struct cake_flow *flows;/* Flows table [flows_cnt] */
+	struct cake_flow *flows; /* Flows table [flows_cnt] */
 	u32	*backlogs;	/* backlog table [flows_cnt] */
-	u32	*tags;		/* for set association [flows_cnt] */
+	u32 *tags;		/* for set association [flows_cnt] */
+	struct cake_host *hosts; /* for triple isolation [flows_cnt] */
 	u32	 flows_cnt;	/* number of flows - must be multiple of
 				 * CAKE_SET_WAYS
 				 */
 	u32	perturbation;/* hash perturbation */
-	u16	quantum;	/* psched_mtu(qdisc_dev(sch)); */
+	u16	quantum;
 
 	struct codel_params cparams;
 	u32	drop_overlimit;
@@ -141,12 +160,12 @@ struct cake_tin_data {
 	/* time_next = time_this + ((len * rate_ns) >> rate_shft) */
 	u64	tin_time_next_packet;
 	u32	tin_rate_ns;
-	int	tin_rate_shft;
+	u16	tin_rate_shft;
 	u32	tin_rate_bps;
 
 	u16	tin_quantum_prio;
 	u16	tin_quantum_band;
-	int	tin_deficit;
+	s32	tin_deficit;
 	u32	tin_backlog;
 	u32	tin_dropped;
 	u32	tin_ecn_mark;
@@ -173,19 +192,20 @@ struct cake_sched_data {
 	u8		flow_mode;
 
 	/* time_next = time_this + ((len * rate_ns) >> rate_shft) */
-	u16		peel_threshold;
 	u16		rate_shft;
 	u64		time_next_packet;
 	u32		rate_ns;
 	u32		rate_bps;
 	u16		rate_flags;
-	short	rate_overhead;
+	s16		rate_overhead;
 	u32		interval;
 	u32		target;
 
 	/* resource tracking */
 	u32		buffer_used;
+	u32		buffer_max_used;
 	u32		buffer_limit;
+	u32		buffer_config_limit;
 
 	/* indices for dequeue */
 	u16		cur_tin;
@@ -200,6 +220,7 @@ struct cake_sched_data {
 	u64		avg_window_begin;
 	u32		avg_window_bytes;
 	u32		avg_peak_bandwidth;
+	u64		last_reconfig_time;
 };
 
 enum {
@@ -207,12 +228,13 @@ enum {
 	CAKE_MODE_PRECEDENCE,
 	CAKE_MODE_DIFFSERV8,
 	CAKE_MODE_DIFFSERV4,
-	CAKE_MODE_SQUASH,
 	CAKE_MODE_MAX
 };
 
 enum {
-	CAKE_FLAG_ATM = 0x0001
+	CAKE_FLAG_ATM = 0x0001,
+	CAKE_FLAG_AUTORATE_INGRESS = 0x0010,
+	CAKE_FLAG_WASH = 0x0100
 };
 
 enum {
@@ -223,11 +245,11 @@ enum {
 	CAKE_FLOW_FLOWS,
 	CAKE_FLOW_DUAL_SRC, /* = CAKE_FLOW_SRC_IP | CAKE_FLOW_FLOWS */
 	CAKE_FLOW_DUAL_DST, /* = CAKE_FLOW_DST_IP | CAKE_FLOW_FLOWS */
-	CAKE_FLOW_DUAL,     /* = CAKE_FLOW_HOSTS  | CAKE_FLOW_FLOWS */
+	CAKE_FLOW_TRIPLE,   /* = CAKE_FLOW_HOSTS  | CAKE_FLOW_FLOWS */
 	CAKE_FLOW_MAX
 };
 
-static inline unsigned int
+static inline u32
 cake_hash(struct cake_tin_data *q, const struct sk_buff *skb, int flow_mode)
 {
 #if KERNEL_VERSION(4, 2, 0) > LINUX_VERSION_CODE
@@ -235,7 +257,8 @@ cake_hash(struct cake_tin_data *q, const struct sk_buff *skb, int flow_mode)
 #else
 	struct flow_keys keys, host_keys;
 #endif
-	u32 flow_hash, host_hash, reduced_hash;
+	u32 flow_hash=0, srchost_hash, dsthost_hash;
+	u16 reduced_hash, srchost_idx, dsthost_idx;
 
 	if (unlikely(flow_mode == CAKE_FLOW_NONE ||
 		     q->flows_cnt < CAKE_SET_WAYS))
@@ -244,19 +267,18 @@ cake_hash(struct cake_tin_data *q, const struct sk_buff *skb, int flow_mode)
 #if KERNEL_VERSION(4, 2, 0) > LINUX_VERSION_CODE
 	skb_flow_dissect(skb, &keys);
 
-	host_hash = jhash_3words(
-		(__force u32)((flow_mode & CAKE_FLOW_DST_IP) ? keys.dst : 0),
-		(__force u32)((flow_mode & CAKE_FLOW_SRC_IP) ? keys.src : 0),
-		(__force u32)0, q->perturbation);
+	srchost_hash = jhash_1word(
+		(__force u32) keys.src, q->perturbation);
 
-	if (!(flow_mode & CAKE_FLOW_FLOWS))
-		flow_hash = host_hash;
-	else
+	dsthost_hash = jhash_1word(
+		(__force u32) keys.dst, q->perturbation);
+
+	if (flow_mode & CAKE_FLOW_FLOWS) {
 		flow_hash = jhash_3words(
 			(__force u32)keys.dst,
 			(__force u32)keys.src ^ keys.ip_proto,
 			(__force u32)keys.ports, q->perturbation);
-
+	}
 #else
 
 /* Linux kernel 4.2.x have skb_flow_dissect_flow_keys which takes only 2
@@ -279,39 +301,44 @@ cake_hash(struct cake_tin_data *q, const struct sk_buff *skb, int flow_mode)
 	host_keys.tags.vlan_id    = 0;
 	host_keys.tags.flow_label = 0;
 
-	if (!(flow_mode & CAKE_FLOW_SRC_IP)) {
-		switch (host_keys.control.addr_type) {
-		case FLOW_DISSECTOR_KEY_IPV4_ADDRS:
-			host_keys.addrs.v4addrs.src = 0;
-			break;
-
-		case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
-			memset(&host_keys.addrs.v6addrs.src, 0,
-			       sizeof(host_keys.addrs.v6addrs.src));
-			break;
-		};
-	}
-
-	if (!(flow_mode & CAKE_FLOW_DST_IP)) {
-		switch (host_keys.control.addr_type) {
-		case FLOW_DISSECTOR_KEY_IPV4_ADDRS:
-			host_keys.addrs.v4addrs.dst = 0;
-			break;
-
-		case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
-			memset(&host_keys.addrs.v6addrs.dst, 0,
-			       sizeof(host_keys.addrs.v6addrs.dst));
-			break;
-		};
-	}
-
-	host_hash = flow_hash_from_keys(&host_keys);
-	if (!(flow_mode & CAKE_FLOW_FLOWS))
-		flow_hash = host_hash;
-	else
+	if (flow_mode & CAKE_FLOW_FLOWS)
 		flow_hash = flow_hash_from_keys(&keys);
+
+	switch (host_keys.control.addr_type) {
+	case FLOW_DISSECTOR_KEY_IPV4_ADDRS:
+		host_keys.addrs.v4addrs.src = 0;
+		dsthost_hash = flow_hash_from_keys(&host_keys);
+		host_keys.addrs.v4addrs.src = keys.addrs.v4addrs.src;
+		host_keys.addrs.v4addrs.dst = 0;
+		srchost_hash = flow_hash_from_keys(&host_keys);
+		break;
+
+	case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
+		memset(&host_keys.addrs.v6addrs.src, 0,
+			   sizeof(host_keys.addrs.v6addrs.src));
+		dsthost_hash = flow_hash_from_keys(&host_keys);
+		host_keys.addrs.v6addrs.src = keys.addrs.v6addrs.src;
+		memset(&host_keys.addrs.v6addrs.dst, 0,
+			   sizeof(host_keys.addrs.v6addrs.dst));
+		srchost_hash = flow_hash_from_keys(&host_keys);
+		break;
+
+	default:
+		dsthost_hash = srchost_hash = 0;
+	};
 #endif
-	reduced_hash = reciprocal_scale(flow_hash, q->flows_cnt);
+
+	if (!(flow_mode & CAKE_FLOW_FLOWS)) {
+		if(flow_mode & CAKE_FLOW_SRC_IP)
+			flow_hash ^= srchost_hash;
+
+		if(flow_mode & CAKE_FLOW_DST_IP)
+			flow_hash ^= dsthost_hash;
+	}
+
+	reduced_hash = reciprocal_scale(flow_hash,    q->flows_cnt);
+	srchost_idx  = reciprocal_scale(srchost_hash, q->flows_cnt);
+	dsthost_idx  = reciprocal_scale(dsthost_hash, q->flows_cnt);
 
 	/* set-associative hashing */
 	/* fast path if no hash collision (direct lookup succeeds) */
@@ -320,46 +347,88 @@ cake_hash(struct cake_tin_data *q, const struct sk_buff *skb, int flow_mode)
 	} else {
 		u32 inner_hash = reduced_hash % CAKE_SET_WAYS;
 		u32 outer_hash = reduced_hash - inner_hash;
-		u32 i, j, k;
+		u32 i, k;
+		bool need_allocate_src = false;
+		bool need_allocate_dst = false;
 
 		/* check if any active queue in the set is reserved for
-		 * this flow. count the empty queues in the set, too
+		 * this flow.
 		 */
-
-		for (i = j = 0, k = inner_hash; i < CAKE_SET_WAYS;
+		for (i = 0, k = inner_hash; i < CAKE_SET_WAYS;
 		     i++, k = (k + 1) % CAKE_SET_WAYS) {
 			if (q->tags[outer_hash + k] == flow_hash) {
 				q->way_hits++;
 				goto found;
-			} else if (list_empty(&q->flows[outer_hash + k].
-					      flowchain)) {
-				j++;
 			}
 		}
 
-		/* no queue is reserved for this flow */
-		if (j) {
-			/* there's at least one empty queue, so find one
-			 * to reserve.
-			 */
-			q->way_misses++;
-
-			for (i = 0; i < CAKE_SET_WAYS; i++, k = (k + 1)
-				     % CAKE_SET_WAYS)
-				if (list_empty(&q->flows[outer_hash + k].
-					       flowchain))
-					goto found;
-		} else {
-			/* With no empty queues default to the original
-			 * queue and accept the collision.
-			 */
-			q->way_collisions++;
+		/* no queue is reserved for this flow, look for an
+		 * empty one.
+		 */
+		for (i = 0; i < CAKE_SET_WAYS;
+			 i++, k = (k + 1) % CAKE_SET_WAYS) {
+			if (list_empty(&q->flows[outer_hash + k].
+					   flowchain)) {
+				q->way_misses++;
+				need_allocate_src = true;
+				need_allocate_dst = true;
+				goto found;
+			}
 		}
+
+		/* With no empty queues, default to the original
+		 * queue, accept the collision, update the host tags.
+		 */
+		q->way_collisions++;
+		q->hosts[q->flows[reduced_hash].srchost].srchost_refcnt--;
+		q->hosts[q->flows[reduced_hash].dsthost].dsthost_refcnt--;
+		need_allocate_src = true;
+		need_allocate_dst = true;
 
 found:
 		/* reserve queue for future packets in same flow */
 		reduced_hash = outer_hash + k;
 		q->tags[reduced_hash] = flow_hash;
+
+		if(need_allocate_src) {
+			inner_hash = srchost_idx % CAKE_SET_WAYS;
+			outer_hash = srchost_idx - inner_hash;
+			for(i = 0, k = inner_hash; i < CAKE_SET_WAYS;
+				i++, k = (k + 1) % CAKE_SET_WAYS) {
+				if(q->hosts[outer_hash + k].srchost_tag == srchost_hash)
+					goto found_src;
+			}
+			for(i = 0; i < CAKE_SET_WAYS;
+				i++, k = (k + 1) % CAKE_SET_WAYS) {
+				if(!q->hosts[outer_hash + k].srchost_refcnt)
+					break;
+			}
+			q->hosts[outer_hash + k].srchost_tag = srchost_hash;
+found_src:
+			srchost_idx = outer_hash + k;
+			q->hosts[srchost_idx].srchost_refcnt++;
+			q->flows[reduced_hash].srchost = srchost_idx;
+		}
+
+		if(need_allocate_dst) {
+			inner_hash = dsthost_idx % CAKE_SET_WAYS;
+			outer_hash = dsthost_idx - inner_hash;
+			for(i = 0, k = inner_hash; i < CAKE_SET_WAYS;
+				i++, k = (k + 1) % CAKE_SET_WAYS) {
+				if(q->hosts[outer_hash + k].dsthost_tag == dsthost_hash)
+					goto found_dst;
+			}
+			for(i = 0; i < CAKE_SET_WAYS;
+				i++, k = (k + 1) % CAKE_SET_WAYS) {
+				if(!q->hosts[outer_hash + k].dsthost_refcnt)
+					break;
+			}
+			q->hosts[outer_hash + k].dsthost_tag = dsthost_hash;
+found_dst:
+			dsthost_idx = outer_hash + k;
+			q->hosts[dsthost_idx].dsthost_refcnt++;
+			q->flows[reduced_hash].dsthost = dsthost_idx;
+		}
 	}
 
 	return reduced_hash;
@@ -404,7 +473,7 @@ static inline u32 cake_overhead(struct cake_sched_data *q, u32 in)
 }
 
 static inline codel_time_t cake_ewma(codel_time_t avg, codel_time_t sample,
-				     int shift)
+				     u32 shift)
 {
 	avg -= avg >> shift;
 	avg += sample >> shift;
@@ -468,28 +537,36 @@ static unsigned int cake_drop(struct Qdisc *sch)
 	return idx + (tin << 16);
 }
 
-static inline void cake_squash_diffserv(struct sk_buff *skb)
+static inline void cake_wash_diffserv(struct sk_buff *skb)
 {
 	switch (skb->protocol) {
 	case htons(ETH_P_IP):
-		ipv4_change_dsfield(ip_hdr(skb), 3, 0);
+		ipv4_change_dsfield(ip_hdr(skb), INET_ECN_MASK, 0);
 		break;
 	case htons(ETH_P_IPV6):
-		ipv6_change_dsfield(ipv6_hdr(skb), 3, 0);
+		ipv6_change_dsfield(ipv6_hdr(skb), INET_ECN_MASK, 0);
 		break;
 	default:
 		break;
 	};
 }
 
-static inline unsigned int cake_get_diffserv(struct sk_buff *skb)
+static inline u32 cake_handle_diffserv(struct sk_buff *skb, u16 wash)
 {
+	u32 dscp;
+
 	switch (skb->protocol) {
 	case htons(ETH_P_IP):
-		return ipv4_get_dsfield(ip_hdr(skb)) >> 2;
+		dscp = ipv4_get_dsfield(ip_hdr(skb)) >> 2;
+		if (wash && dscp)
+			ipv4_change_dsfield(ip_hdr(skb), INET_ECN_MASK, 0);
+		return dscp;
 
 	case htons(ETH_P_IPV6):
-		return ipv6_get_dsfield(ipv6_hdr(skb)) >> 2;
+		dscp = ipv6_get_dsfield(ipv6_hdr(skb)) >> 2;
+		if (wash && dscp)
+			ipv6_change_dsfield(ipv6_hdr(skb), INET_ECN_MASK, 0);
+		return dscp;
 
 	default:
 		/* If there is no Diffserv field, treat as bulk */
@@ -497,23 +574,28 @@ static inline unsigned int cake_get_diffserv(struct sk_buff *skb)
 	};
 }
 
-static int cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
+static void cake_reconfigure(struct Qdisc *sch);
+
+static s32 cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
 	struct cake_sched_data *q = qdisc_priv(sch);
-	unsigned int idx, tin;
+	u32 idx, tin;
 	struct cake_tin_data *b;
 	struct cake_flow *flow;
 	u32 len = qdisc_pkt_len(skb);
-	u64 now = ktime_get_ns();
+	u64 now = codel_get_time();
 
 	/* extract the Diffserv Precedence field, if it exists */
-	if (q->tin_mode != CAKE_MODE_SQUASH) {
-		tin = q->tin_index[cake_get_diffserv(skb)];
+	/* and clear DSCP bits if washing */
+	if (q->tin_mode != CAKE_MODE_BESTEFFORT) {
+		tin = q->tin_index[cake_handle_diffserv(skb,
+				q->rate_flags & CAKE_FLAG_WASH)];
 		if (unlikely(tin >= q->tin_cnt))
 			tin = 0;
 	} else {
-		cake_squash_diffserv(skb);
 		tin = 0;
+		if (q->rate_flags & CAKE_FLAG_WASH)
+			cake_wash_diffserv(skb);
 	}
 
 	b = &q->tins[tin];
@@ -540,11 +622,10 @@ static int cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	 * or if we need to know individual packet sizes for framing overhead.
 	 */
 
-	if (unlikely((len * max_t(u32, b->bulk_flow_count, 1U) >
-		      q->peel_threshold && skb_is_gso(skb)))) {
+	if (skb_is_gso(skb)) {
 		struct sk_buff *segs, *nskb;
 		netdev_features_t features = netif_skb_features(skb);
-
+		u32 slen = 0;
 		segs = skb_gso_segment(skb, features & ~NETIF_F_GSO_MASK);
 
 		if (IS_ERR_OR_NULL(segs))
@@ -554,28 +635,27 @@ static int cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 			nskb = segs->next;
 			segs->next = NULL;
 			qdisc_skb_cb(segs)->pkt_len = segs->len;
-
-			codel_set_enqueue_time(segs);
+			get_codel_cb(segs)->enqueue_time = now;
 			flow_queue_add(flow, segs);
-
 			/* stats */
 			sch->q.qlen++;
 			b->packets++;
-			b->bytes            += segs->len;
-			b->backlogs[idx]    += segs->len;
-			b->tin_backlog      += segs->len;
-			sch->qstats.backlog += segs->len;
-			q->avg_window_bytes += segs->len;
+			slen += segs->len;
 			q->buffer_used      += segs->truesize;
-
 			segs = nskb;
 		}
+
+		b->bytes            += slen;
+		b->backlogs[idx]    += slen;
+		b->tin_backlog      += slen;
+		sch->qstats.backlog += slen;
+		q->avg_window_bytes += slen;
 
 		qdisc_tree_decrease_qlen(sch, 1);
 		consume_skb(skb);
 	} else {
 		/* not splitting */
-		codel_set_enqueue_time(skb);
+		get_codel_cb(skb)->enqueue_time = now;
 		flow_queue_add(flow, skb);
 
 		/* stats */
@@ -590,26 +670,37 @@ static int cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	}
 
 	/* incoming bandwidth capacity estimate */
+	if (q->rate_flags & CAKE_FLAG_AUTORATE_INGRESS)
 	{
 		u64 packet_interval = now - q->last_packet_time;
-		u64 window_interval = now - q->avg_window_begin;
 
-		if(packet_interval > NSEC_PER_SEC)
+		if (packet_interval > NSEC_PER_SEC)
 			packet_interval = NSEC_PER_SEC;
 
 		/* filter out short-term bursts, eg. wifi aggregation */
-		q->avg_packet_interval = cake_ewma(q->avg_packet_interval, packet_interval,
-					packet_interval > q->avg_packet_interval ? 2 : 8);
+		q->avg_packet_interval = cake_ewma(q->avg_packet_interval,
+			packet_interval,
+			packet_interval > q->avg_packet_interval ? 2 : 8);
+
 		q->last_packet_time = now;
 
-		if(window_interval > q->avg_packet_interval * 4) {
+		if (packet_interval > q->avg_packet_interval) {
+			u64 window_interval = now - q->avg_window_begin;
 			u64 b = q->avg_window_bytes * (u64) NSEC_PER_SEC;
 
 			do_div(b, window_interval);
-			q->avg_peak_bandwidth = cake_ewma(q->avg_peak_bandwidth, b,
-						b > q->avg_peak_bandwidth ? 2 : 8);
+			q->avg_peak_bandwidth =
+				cake_ewma(q->avg_peak_bandwidth, b,
+					b > q->avg_peak_bandwidth ? 2 : 8);
 			q->avg_window_bytes = 0;
 			q->avg_window_begin = now;
+
+			if (q->rate_flags & CAKE_FLAG_AUTORATE_INGRESS &&
+				now - q->last_reconfig_time >
+				(NSEC_PER_SEC / 4)) {
+				q->rate_bps = (q->avg_peak_bandwidth * 7) >> 3;
+				cake_reconfigure(sch);
+			}
 		}
 	}
 
@@ -620,6 +711,9 @@ static int cake_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		flow->deficit = b->quantum;
 		flow->dropped = 0;
 	}
+
+	if (q->buffer_used > q->buffer_max_used)
+		q->buffer_max_used = q->buffer_used;
 
 	if (q->buffer_used > q->buffer_limit) {
 		bool same_flow = false;
@@ -679,10 +773,10 @@ static struct sk_buff *cake_dequeue(struct Qdisc *sch)
 	struct cake_tin_data *b = &q->tins[q->cur_tin];
 	struct cake_flow *flow;
 	struct list_head *head;
-	u32 prev_drop_count, prev_ecn_mark;
+	u16 prev_drop_count, prev_ecn_mark, deferred_hosts;
 	u32 len;
-	u64 now = ktime_get_ns();
-	int i;
+	codel_time_t now = ktime_get_ns();
+	s32 i;
 	codel_time_t delay;
 
 begin:
@@ -714,10 +808,12 @@ begin:
 		}
 	}
 
+	deferred_hosts = 0;
+
 retry:
 	/* service this class */
 	head = &b->new_flows;
-	if (list_empty(head)) {
+	if (list_empty(head) || deferred_hosts >= b->sparse_flow_count) {
 		head = &b->old_flows;
 
 		if (unlikely(list_empty(head))) {
@@ -730,6 +826,31 @@ retry:
 	flow = list_first_entry(head, struct cake_flow, flowchain);
 	q->cur_flow = flow - b->flows;
 
+	/* triple isolation (modified dual DRR) */
+	if (((q->flow_mode & CAKE_FLOW_DUAL_SRC) == CAKE_FLOW_DUAL_SRC &&
+			b->hosts[flow->srchost].srchost_deficit < 0) ||
+		((q->flow_mode & CAKE_FLOW_DUAL_DST) == CAKE_FLOW_DUAL_DST &&
+			b->hosts[flow->dsthost].dsthost_deficit < 0)) {
+
+		/* this host is exhausted, so defer the flow */
+		list_move_tail(&flow->flowchain, head);
+		deferred_hosts++;
+
+		if(deferred_hosts >= b->sparse_flow_count + b->bulk_flow_count) {
+			/* looks like all hosts are exhausted; refresh them */
+			u32 j;
+			for(j=0; j < b->flows_cnt; j++) {
+				if(b->hosts[j].srchost_deficit < 0)
+					b->hosts[j].srchost_deficit += b->quantum;
+				if(b->hosts[j].dsthost_deficit < 0)
+					b->hosts[j].dsthost_deficit += b->quantum;
+			}
+			deferred_hosts = 0;
+		}
+		goto retry;
+	}
+
+	/* flow isolation (DRR++) */
 	if (flow->deficit <= 0) {
 		flow->deficit += b->quantum;
 		list_move_tail(&flow->flowchain, &b->old_flows);
@@ -743,18 +864,17 @@ retry:
 	prev_drop_count = flow->cvars.drop_count;
 	prev_ecn_mark   = flow->cvars.ecn_mark;
 
-	skb = codel_dequeue(sch, &flow->cvars, b->cparams.interval,
-			    b->cparams.target, b->cparams.threshold,
-			    q->buffer_used >
-			    (q->buffer_limit >> 2) + (q->buffer_limit >> 1));
+	skb = codel_dequeue(sch, &flow->cvars, &b->cparams, now,
+		(b->backlogs[q->cur_flow] * (u64)q->rate_ns) >> q->rate_shft
+			> b->cparams.interval);
 
 	b->tin_dropped  += flow->cvars.drop_count - prev_drop_count;
 	b->tin_ecn_mark += flow->cvars.ecn_mark   - prev_ecn_mark;
+	flow->cvars.ecn_mark = 0;
 	flow->dropped        += flow->cvars.drop_count - prev_drop_count;
-	flow->dropped        += flow->cvars.ecn_mark   - prev_ecn_mark;
 
 	if (!skb) {
-		/* codel dropped the last packet in this queue; try again */
+		/* this queue was actually empty */
 		if ((head == &b->new_flows) &&
 		    !list_empty(&b->old_flows)) {
 			list_move_tail(&flow->flowchain, &b->old_flows);
@@ -766,6 +886,8 @@ retry:
 				b->sparse_flow_count--;
 			else
 				b->bulk_flow_count--;
+			b->hosts[flow->srchost].srchost_refcnt--;
+			b->hosts[flow->dsthost].dsthost_refcnt--;
 		}
 		goto begin;
 	}
@@ -780,6 +902,8 @@ retry:
 
 	flow->deficit -= len;
 	b->tin_deficit -= len;
+	b->hosts[flow->srchost].srchost_deficit -= len;
+	b->hosts[flow->dsthost].dsthost_deficit -= len;
 
 	/* collect delay stats */
 	delay = now - codel_get_enqueue_time(skb);
@@ -802,7 +926,7 @@ retry:
 
 static void cake_reset(struct Qdisc *sch)
 {
-	int c;
+	u32 c;
 
 	for (c = 0; c < CAKE_MAX_TINS; c++)
 		cake_clear_tin(sch, c);
@@ -816,6 +940,8 @@ static const struct nla_policy cake_policy[TCA_CAKE_MAX + 1] = {
 	[TCA_CAKE_OVERHEAD]      = { .type = NLA_S32 },
 	[TCA_CAKE_RTT]           = { .type = NLA_U32 },
 	[TCA_CAKE_TARGET]        = { .type = NLA_U32 },
+	[TCA_CAKE_MEMORY]        = { .type = NLA_U32 },
+	[TCA_CAKE_WASH]          = { .type = NLA_U32 },
 };
 
 static void cake_set_rate(struct cake_tin_data *b, u64 rate, u32 mtu,
@@ -830,7 +956,9 @@ static void cake_set_rate(struct cake_tin_data *b, u64 rate, u32 mtu,
 	codel_time_t byte_target_ns;
 	u32 byte_target = mtu + (mtu >> 1);
 
+	b->quantum = 1514;
 	if (rate) {
+		b->quantum = max(min(rate >> 12, 1514ULL), 300ULL);
 		rate_shft = 32;
 		rate_ns = ((u64) NSEC_PER_SEC) << rate_shft;
 		do_div(rate_ns, max(MIN_RATE, rate));
@@ -852,8 +980,6 @@ static void cake_set_rate(struct cake_tin_data *b, u64 rate, u32 mtu,
 				     b->cparams.target * 8);
 	b->cparams.threshold = (b->cparams.target >> 15) *
 		(b->cparams.interval >> 15) * 2;
-
-	b->quantum = max(min(rate >> 12, 1514ULL), 300ULL);
 }
 
 static void cake_config_besteffort(struct Qdisc *sch)
@@ -862,7 +988,7 @@ static void cake_config_besteffort(struct Qdisc *sch)
 	struct cake_tin_data *b = &q->tins[0];
 	u64 rate = q->rate_bps;
 	u32 mtu = psched_mtu(qdisc_dev(sch));
-	unsigned int i;
+	u32 i;
 
 	q->tin_cnt = 1;
 
@@ -892,7 +1018,8 @@ static void cake_config_precedence(struct Qdisc *sch)
 	for (i = 0; i < q->tin_cnt; i++) {
 		struct cake_tin_data *b = &q->tins[i];
 
-		cake_set_rate(b, rate, mtu, US2TIME(q->target), US2TIME(q->interval));
+		cake_set_rate(b, rate, mtu, US2TIME(q->target),
+				US2TIME(q->interval));
 
 		b->tin_quantum_prio = max_t(u16, 1U, quantum1);
 		b->tin_quantum_band = max_t(u16, 1U, quantum2);
@@ -1005,7 +1132,8 @@ static void cake_config_diffserv8(struct Qdisc *sch)
 	for (i = 0; i < q->tin_cnt; i++) {
 		struct cake_tin_data *b = &q->tins[i];
 
-		cake_set_rate(b, rate, mtu, US2TIME(q->target), US2TIME(q->interval));
+		cake_set_rate(b, rate, mtu, US2TIME(q->target),
+				US2TIME(q->interval));
 
 		b->tin_quantum_prio = max_t(u16, 1U, quantum1);
 		b->tin_quantum_band = max_t(u16, 1U, quantum2);
@@ -1095,7 +1223,6 @@ static void cake_reconfigure(struct Qdisc *sch)
 	int c;
 
 	switch (q->tin_mode) {
-	case CAKE_MODE_SQUASH:
 	case CAKE_MODE_BESTEFFORT:
 	default:
 		cake_config_besteffort(sch);
@@ -1114,30 +1241,33 @@ static void cake_reconfigure(struct Qdisc *sch)
 		break;
 	};
 
-	BUG_ON(q->tin_cnt >= CAKE_MAX_TINS);
+	BUG_ON(q->tin_cnt > CAKE_MAX_TINS);
 	for (c = q->tin_cnt; c < CAKE_MAX_TINS; c++)
 		cake_clear_tin(sch, c);
 
 	q->rate_ns   = q->tins[0].tin_rate_ns;
 	q->rate_shft = q->tins[0].tin_rate_shft;
 
-	if (q->rate_bps) {
-		u64 t = q->rate_bps * q->interval;
+	if (q->buffer_config_limit) {
+		q->buffer_limit = q->buffer_config_limit;
+	} else if (q->rate_bps) {
+		u64 t = (u64) q->rate_bps * q->interval;
 
 		do_div(t, USEC_PER_SEC / 4);
-		q->buffer_limit = t;
-		if (q->buffer_limit < 65536)
-			q->buffer_limit = 65536;
+		q->buffer_limit = max_t(u32, t, 65536U);
 
-		q->peel_threshold = (q->rate_flags & CAKE_FLAG_ATM) ?
-			0 : min(65535U, q->rate_bps >> 12);
 	} else {
-		q->buffer_limit = 1 << 20;
-		q->peel_threshold = 0;
+		q->buffer_limit = ~0;
 	}
 
-	q->buffer_limit = min(q->buffer_limit, sch->limit *
-			      psched_mtu(qdisc_dev(sch)));
+	if (q->rate_bps)
+		sch->flags &= ~TCQ_F_CAN_BYPASS;
+	else
+		sch->flags |= TCQ_F_CAN_BYPASS;
+
+	q->buffer_limit = min(q->buffer_limit,
+		max(sch->limit * psched_mtu(qdisc_dev(sch)),
+		    q->buffer_config_limit));
 }
 
 static int cake_change(struct Qdisc *sch, struct nlattr *opt)
@@ -1166,6 +1296,13 @@ static int cake_change(struct Qdisc *sch, struct nlattr *opt)
 			q->rate_flags &= ~CAKE_FLAG_ATM;
 	}
 
+	if (tb[TCA_CAKE_WASH]) {
+		if (!!nla_get_u32(tb[TCA_CAKE_WASH]))
+			q->rate_flags |= CAKE_FLAG_WASH;
+		else
+			q->rate_flags &= ~CAKE_FLAG_WASH;
+	}
+
 	if (tb[TCA_CAKE_FLOW_MODE])
 		q->flow_mode = nla_get_u32(tb[TCA_CAKE_FLOW_MODE]);
 
@@ -1185,6 +1322,16 @@ static int cake_change(struct Qdisc *sch, struct nlattr *opt)
 		if (!q->target)
 			q->target = 1;
 	}
+
+	if (tb[TCA_CAKE_AUTORATE]) {
+		if (!!nla_get_u32(tb[TCA_CAKE_AUTORATE]))
+			q->rate_flags |= CAKE_FLAG_AUTORATE_INGRESS;
+		else
+			q->rate_flags &= ~CAKE_FLAG_AUTORATE_INGRESS;
+	}
+
+	if (tb[TCA_CAKE_MEMORY])
+		q->buffer_config_limit = nla_get_s32(tb[TCA_CAKE_MEMORY]);
 
 	if (q->tins) {
 		sch_tree_lock(sch);
@@ -1220,6 +1367,7 @@ static void cake_destroy(struct Qdisc *sch)
 		u32 i;
 
 		for (i = 0; i < CAKE_MAX_TINS; i++) {
+			cake_free(q->tins[i].hosts);
 			cake_free(q->tins[i].tags);
 			cake_free(q->tins[i].backlogs);
 			cake_free(q->tins[i].flows);
@@ -1241,7 +1389,9 @@ static int cake_init(struct Qdisc *sch, struct nlattr *opt)
 	q->rate_bps = 0; /* unlimited by default */
 
 	q->interval = 100000; /* 100ms default */
-	q->target   =   5000; /*   5ms */
+	q->target   =   5000; /* 5ms: codel RFC argues
+			       * for 5 to 10% of interval
+			       */
 
 	q->cur_tin = 0;
 	q->cur_flow  = 0;
@@ -1274,7 +1424,9 @@ static int cake_init(struct Qdisc *sch, struct nlattr *opt)
 					     sizeof(struct cake_flow));
 		b->backlogs = cake_zalloc(b->flows_cnt * sizeof(u32));
 		b->tags     = cake_zalloc(b->flows_cnt * sizeof(u32));
-		if (!b->flows || !b->backlogs || !b->tags)
+		b->hosts    = cake_zalloc(b->flows_cnt *
+					     sizeof(struct cake_host));
+		if (!b->flows || !b->backlogs || !b->tags || !b->hosts)
 			goto nomem;
 
 		for (j = 0; j < b->flows_cnt; j++) {
@@ -1286,12 +1438,7 @@ static int cake_init(struct Qdisc *sch, struct nlattr *opt)
 	}
 
 	cake_reconfigure(sch);
-
-	if (q->rate_bps)
-		sch->flags &= ~TCQ_F_CAN_BYPASS;
-	else
-		sch->flags |= TCQ_F_CAN_BYPASS;
-
+	q->avg_peak_bandwidth = q->rate_bps;
 	return 0;
 
 nomem:
@@ -1320,6 +1467,10 @@ static int cake_dump(struct Qdisc *sch, struct sk_buff *skb)
 	if (nla_put_u32(skb, TCA_CAKE_FLOW_MODE, q->flow_mode))
 		goto nla_put_failure;
 
+	if (nla_put_u32(skb, TCA_CAKE_WASH,
+			!!(q->rate_flags & CAKE_FLAG_WASH)))
+		goto nla_put_failure;
+
 	if (nla_put_u32(skb, TCA_CAKE_OVERHEAD, q->rate_overhead))
 		goto nla_put_failure;
 
@@ -1327,6 +1478,13 @@ static int cake_dump(struct Qdisc *sch, struct sk_buff *skb)
 		goto nla_put_failure;
 
 	if (nla_put_u32(skb, TCA_CAKE_TARGET, q->target))
+		goto nla_put_failure;
+
+	if (nla_put_u32(skb, TCA_CAKE_AUTORATE,
+			!!(q->rate_flags & CAKE_FLAG_AUTORATE_INGRESS)))
+		goto nla_put_failure;
+
+	if (nla_put_u32(skb, TCA_CAKE_MEMORY, q->buffer_config_limit))
 		goto nla_put_failure;
 
 	return nla_nest_end(skb, opts);
@@ -1347,7 +1505,7 @@ static int cake_dump_stats(struct Qdisc *sch, struct gnet_dump *d)
 
 	BUG_ON(q->tin_cnt > TC_CAKE_MAX_TINS);
 
-	st->version = 2;
+	st->version = 3;
 	st->max_tins = TC_CAKE_MAX_TINS;
 	st->tin_cnt = q->tin_cnt;
 
@@ -1380,6 +1538,8 @@ static int cake_dump_stats(struct Qdisc *sch, struct gnet_dump *d)
 		st->max_skblen[i]        = b->max_skblen;
 	}
 	st->capacity_estimate = q->avg_peak_bandwidth;
+	st->memory_limit      = q->buffer_limit;
+	st->memory_used       = q->buffer_max_used;
 
 	i = gnet_stats_copy_app(d, st, sizeof(*st));
 	cake_free(st);
@@ -1536,4 +1696,5 @@ module_init(cake_module_init)
 module_exit(cake_module_exit)
 MODULE_AUTHOR("Jonathan Morton");
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("The Cake shaper. Version: " CAKE_VERSION);
 
