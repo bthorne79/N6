@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R49.Shamu"
+VER=".R50.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
