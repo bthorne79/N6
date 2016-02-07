@@ -257,11 +257,8 @@ extern struct page * find_get_page_flags(struct address_space *mapping,
 
 #define FGP_ACCESSED		0x00000001
 
-static inline struct page* find_get_page(struct address_space *mapping,
-					 pgoff_t index)
-{
-	return find_get_page_flags(mapping, index, 0);
-}
+extern struct page* find_get_page(struct address_space *mapping,
+					 pgoff_t index);
 
 pgoff_t page_cache_next_hole(struct address_space *mapping,
                              pgoff_t index, unsigned long max_scan);
