@@ -346,12 +346,12 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-GRAPHITE	= -fgraphite-identity -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -floop-flatten
-FLAGS_MODULE   = $(GRAPHITE)
-AFLAGS_MODULE   = $(GRAPHITE)
-LDFLAGS_MODULE  = $(GRAPHITE)
-CFLAGS_KERNEL	= $(GRAPHITE) -fmodulo-sched -fmodulo-sched-allow-regmoves -ftree-loop-vectorize -ftree-loop-distribute-patterns -ftree-slp-vectorize -fvect-cost-model -ftree-partial-pre -fgcse-after-reload -fgcse-lm -fgcse-sm -fsched-spec-load -ffast-math -fsingle-precision-constant -fpredictive-commoning -mtune=cortex-a15 -mfpu=neon-vfpv4
-AFLAGS_KERNEL	= $(GRAPHITE)
+
+FLAGS_MODULE   = 
+AFLAGS_MODULE   = 
+LDFLAGS_MODULE  = 
+CFLAGS_KERNEL	= -fmodulo-sched -fmodulo-sched-allow-regmoves -ftree-loop-vectorize -ftree-loop-distribute-patterns -ftree-slp-vectorize -fvect-cost-model -ftree-partial-pre -fgcse-after-reload -fgcse-lm -fgcse-sm -fsched-spec-load -ffast-math -fsingle-precision-constant -fpredictive-commoning -mtune=cortex-a15 -mfpu=neon-vfpv4
+AFLAGS_KERNEL	= 
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 
@@ -379,11 +379,14 @@ KBUILD_CFLAGS   := $(GRAPHITE) -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs 
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
            -mtune=cortex-a15 \
-           -fmodulo-sched -fmodulo-sched-allow-regmoves -fno-tree-vectorize -ffast-math \
+           -fmodulo-sched -fmodulo-sched-allow-regmoves -ffast-math \
            -funswitch-loops -fpredictive-commoning -fgcse-after-reload \
-		   -fno-aggressive-loop-optimizations \
 		   -fno-delete-null-pointer-checks \
-		   --param l1-cache-size=16 --param l1-cache-line-size=16 --param l2-cache-size=2048
+		   --param l1-cache-size=16 --param l1-cache-line-size=16 --param l2-cache-size=2048 \
+		   -ftree-loop-vectorize -ftree-loop-distribute-patterns -ftree-slp-vectorize \
+           -fvect-cost-model -ftree-partial-pre \
+           -fgcse-lm -fgcse-sm -fsched-spec-load -fsingle-precision-constant 
+
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
