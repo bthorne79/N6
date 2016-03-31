@@ -99,7 +99,7 @@ echo "Making Despair Kernel:"
 echo "-----------------"
 echo -e "${restore}"
 
-while read -p "Do you want to use UBERTC(1) or SaberMod(2) or Linaro(3)? " echoice
+while read -p "Do you want to use UBERTC(1) or AOSP(2)? " echoice
 do
 case "$echoice" in
 	1 )
@@ -110,17 +110,10 @@ case "$echoice" in
 		break
 		;;
 	2 )
-		export CROSS_COMPILE=/home/despairfactor/tmp/arm-linux-gnueabi-5.2/bin/arm-eabi-
-		TC="SM"
+		export CROSS_COMPILE=${HOME}/android/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-
+		TC="AOSP"
 		echo
-		echo "Using SM"
-		break
-		;;
-	3 )
-		export CROSS_COMPILE=${HOME}/android/linarobuild/out/linaro-arm-eabi-5.2/bin/arm-eabi-
-		TC="LINARO"
-		echo
-		echo "Using Linaro"
+		echo "Using AOSP"
 		break
 		;;
 	* )
