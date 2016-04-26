@@ -99,21 +99,21 @@ echo "Making Despair Kernel:"
 echo "-----------------"
 echo -e "${restore}"
 
-while read -p "Do you want to use UBERTC(1) or AOSP(2)? " echoice
+while read -p "Do you want to use UBER 4.9(1) or UBER 7(2)? " echoice
 do
 case "$echoice" in
 	1 )
 		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-4.9/bin/arm-eabi-
-		TC="UBER"
+		TC="UBER4.9"
 		echo
-		echo "Using UBERTC"
+		echo "Using UBERTC 4.9"
 		break
 		;;
 	2 )
-		export CROSS_COMPILE=${HOME}/android/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-
-		TC="AOSP"
+		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-7.0/bin/arm-eabi-
+		TC="UBER7"
 		echo
-		echo "Using AOSP"
+		echo "Using UBERTC 7"
 		break
 		;;
 	* )
