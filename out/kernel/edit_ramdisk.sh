@@ -45,10 +45,6 @@ if [ "$found" != 'run-parts /system/etc/init.d' ]; then
         echo "    group root" >> /tmp/ramdisk/init.rc
 fi
 
-#copy custom init.shamu.power.rc
-cp /tmp/init.shamu.power.rc /tmp/ramdisk/init.shamu.power.rc
-chmod 750 /tmp/ramdisk/init.shamu.power.rc
-
 #copy custom init.shamu.rc
 cp /tmp/fstab.shamu /tmp/ramdisk/fstab.shamu
 chmod 750 /tmp/ramdisk/fstab.shamu
@@ -64,6 +60,18 @@ chmod 750 /tmp/ramdisk/fstab.shamu
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu1\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu2\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
 #sed -i '/\/sys\/devices\/system\/cpu\/cpu3\/cpufreq\/scaling_min_freq/d' /tmp/ramdisk/init.shamu.power.rc
+#Gain write access on /system
+if  grep -qr ro.secure=1 /tmp/ramdisk/default.prop; then
+ sed -i "s/ro.secure=1/ro.secure=0/" /tmp/ramdisk/default.prop
+fi
+
+if  grep -qr verity_load_state /tmp/ramdisk/init.shamu.rc; then
+ sed -i "s/verity_load_state/#verity_load_state/" /tmp/ramdisk/init.shamu.rc
+fi
+if  grep -qr verity_update_state /tmp/ramdisk/init.shamu.rc; then
+ sed -i "s/verity_update_state/#verity_update_state/" /tmp/ramdisk/init.shamu.rc
+fi
+
 
 #copy my modfied sysctl.conf:)
 cp /system/etc/sysctl.conf /system/etc/sysctl.conf.bak
