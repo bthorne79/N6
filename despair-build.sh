@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R1.Shamu"
+VER=".R1.M.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
@@ -37,7 +37,6 @@ ZIMAGE_DIR="${HOME}/android/despairn6/arch/arm/boot"
 function clean_all {
 		rm -rf $MODULES_DIR/*
 		cd ~/android/despairn6/out/kernel
-		cd ~/android/despairn6/outm/kernel
 		rm -rf $DTBIMAGE
 		git reset --hard > /dev/null 2>&1
 		git clean -f -d > /dev/null 2>&1
@@ -76,19 +75,6 @@ function make_zip {
 		cd $KERNEL_DIR
 }
 
-function make_boot_m {
-		cp -vr $ZIMAGE_DIR/zImage-dtb ~/android/despairn6/outm/kernel/zImage
-		
-		. appendramdisk.sh
-}
-
-
-function make_zip_m {
-		cd ~/android/despairn6/outm
-		zip -r9 `echo $AK_VER`.zip *
-		mv  `echo $AK_VER`.zip $ZIP_MOVE
-		cd $KERNEL_DIR
-}
 
 DATE_START=$(date +"%s")
 
@@ -148,22 +134,11 @@ done
 
 echo
 
-while read -p "Do you want to build Marshmallow(M) or Lollipop(L)? " dchoice
+while read -p "Do you want to build?(y/n)? " dchoice
 do
 case "$dchoice" in
-	m|M )
-		BASE_AK_VER="Despair.M.CFS"
-		AK_VER="$BASE_AK_VER$VER$TC"
-		export LOCALVERSION=~`echo $AK_VER`
-		make_kernel
-		make_dtb
-		make_modules
-		make_boot_m
-		make_zip_m
-		break
-		;;
-	l|L )
-		BASE_AK_VER="Despair.L.CFS"
+	y|Y )
+		BASE_AK_VER="Despair"
 		AK_VER="$BASE_AK_VER$VER$TC"
 		export LOCALVERSION=~`echo $AK_VER`
 		make_kernel
