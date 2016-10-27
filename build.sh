@@ -22,7 +22,7 @@ AK_VER="$BASE_AK_VER$VER"
 export LOCALVERSION=~`echo $AK_VER`
 export ARCH=arm
 export SUBARCH=arm
-export KBUILD_BUILD_USER=DespairFactor
+export KBUILD_BUILD_USER=mdalexca
 export KBUILD_BUILD_HOST=DarkRoom
 
 # Paths
