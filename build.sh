@@ -96,10 +96,10 @@ case "$echoice" in
 		break
 		;;
 	2 )
-		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-7.0/bin/arm-eabi-
-		TC="UBER7"
+		export CROSS_COMPILE=${HOME}/android/uberbuild/out/arm-eabi-6.x/bin/arm-eabi-
+		TC="UBER6"
 		echo
-		echo "Using UBERTC 7"
+		echo "Using UBERTC 6"
 		break
 		;;
 	* )
