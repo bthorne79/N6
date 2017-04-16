@@ -15,7 +15,7 @@ DTBIMAGE="dtb"
 DEFCONFIG="despair_defconfig"
 
 # Kernel Details
-VER=".R13.Shamu"
+VER=".R14.Shamu"
 AK_VER="$BASE_AK_VER$VER"
 
 # Vars
@@ -49,7 +49,7 @@ function make_kernel {
 		echo
 		make $DEFCONFIG
 		make $THREAD
-		
+
 }
 
 function make_modules {
@@ -63,7 +63,7 @@ function make_dtb {
 
 function make_boot {
 		cp -vr $ZIMAGE_DIR/zImage-dtb ~/android/despairn6/out/kernel/zImage
-		
+
 		. appendramdisk.sh
 }
 
@@ -167,4 +167,3 @@ DATE_END=$(date +"%s")
 DIFF=$(($DATE_END - $DATE_START))
 echo "Time: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
 echo
-
